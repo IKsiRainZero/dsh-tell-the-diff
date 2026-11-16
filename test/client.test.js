@@ -36,11 +36,12 @@ test('applying the browser half registers one tab type and one body', () => {
   const types = []
   const slots = []
   const betterTabs = []
+  const keys = []
   const module = loaded.factory((specifier) => {
     assert.equal(specifier, 'react')
     return React
   })
-  assert.deepEqual(module.inject, ['slots', 'sidebarRightTabs'])
+  assert.deepEqual(module.inject, ['slots', 'sidebarRightTabs', 'sidebarRight'])
   module.apply({
     effect(factory) {
       factory()
@@ -56,9 +57,10 @@ test('applying the browser half registers one tab type and one body', () => {
         return () => {}
       },
     },
+    sidebarRight: { openTab: () => {} },
     slots: {
       inject(ownerKey, callback) {
-        assert.equal(ownerKey, 'sidebar.right.pane.tab')
+        keys.push(ownerKey)
         callback()
         return () => {}
       },
@@ -69,6 +71,7 @@ test('applying the browser half registers one tab type and one body', () => {
     },
   })
 
+  assert.deepEqual(keys, ['sidebar.right.pane.tab', 'conversation.composer.dock'])
   assert.equal(types.length, 1)
   assert.equal(types[0].id, 'dsh-tell-the-diff')
   assert.equal(types[0].kind, 'tell-the-diff')
@@ -76,11 +79,17 @@ test('applying the browser half registers one tab type and one body', () => {
   assert.equal(types[0].guide.length, 1)
   assert.equal(typeof types[0].guide[0].description(), 'string')
 
-  assert.equal(slots.length, 1)
+  assert.equal(slots.length, 2)
   assert.equal(slots[0].options.name, 'sidebar.right.pane.tab')
   assert.equal(slots[0].options.key, 'dsh-tell-the-diff')
   assert.equal(typeof slots[0].component, 'function')
   assert.deepEqual(slots[0].options.inject('s1'), { sessionId: 's1' })
+
+  // The ambient strip under the composer is the surface that survives a
+  // collapsed or foreign right column, so it must register too.
+  assert.equal(slots[1].options.name, 'conversation.composer.dock')
+  assert.equal(slots[1].options.id, 'dsh-tell-the-diff')
+  assert.equal(typeof slots[1].component, 'function')
 
   // The better-sidebar bridge shares the very same component, so the two
   // right-column carriers cannot drift apart.
@@ -115,5 +124,5 @@ test('the better-sidebar bridge stays out of the way when that plugin is absent'
     },
   })
   for (const dispose of disposers) dispose()
-  assert.equal(registrations.length, 1)
+  assert.equal(registrations.length, 2)
 })

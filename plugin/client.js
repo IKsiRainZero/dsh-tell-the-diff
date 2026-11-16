@@ -30,6 +30,7 @@ window.__ModuleLoader__.load({
         tabTitle: '任务状态',
         tabDescription: '用普通人能看懂的话说明这个会话在做什么、做到哪、卡在哪。',
         heading: '任务状态',
+        open: '打开',
         empty: '这个会话还没有开始。任务一开始，这里就会显示它在做什么。',
         unknownSession: '还没有可显示的状态。发一句话给模型，这里就会亮起来。',
         plan: '这件事拆成了几步',
@@ -53,6 +54,7 @@ window.__ModuleLoader__.load({
         tabTitle: 'Task status',
         tabDescription: 'What this session is doing, and where it stands, in plain words.',
         heading: 'Task status',
+        open: 'Open',
         empty: 'Nothing has happened in this session yet. The card fills in once a task starts.',
         unknownSession: 'No status to show yet. Send one message and this card lights up.',
         plan: 'Broken into steps',
@@ -156,16 +158,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The card. Fetches one session's status on a timer while it is mounted.
-     * @param props - `sessionId` injected by the slot; `visible` when docked.
+     * One session's status, polled while the component is mounted.
+     * @param sessionId - the session to read, or null while the slot has none.
+     * @returns the current view (null until the first answer) and any error.
      */
-    function StatusCard(props) {
-      const t = dictionary()
-      const sessionId = props.sessionId
-        ?? props.scope?.sessionId
-        ?? props.session?.sessionId
-        ?? props.tab?.sessionId
-        ?? null
+    function useStatus(sessionId) {
       const [view, setView] = useState(null)
       const [error, setError] = useState(null)
 
@@ -197,6 +194,27 @@ window.__ModuleLoader__.load({
           controller.abort()
         }
       }, [load, sessionId])
+
+      return { view, error }
+    }
+
+    /** The session a slot occurrence belongs to, whichever carrier passed it. */
+    function sessionOf(props) {
+      return props.sessionId
+        ?? props.scope?.sessionId
+        ?? props.session?.sessionId
+        ?? props.tab?.sessionId
+        ?? null
+    }
+
+    /**
+     * The card. Fetches one session's status on a timer while it is mounted.
+     * @param props - `sessionId` injected by the slot; `scope` under better-sidebar.
+     */
+    function StatusCard(props) {
+      const t = dictionary()
+      const sessionId = sessionOf(props)
+      const { view, error } = useStatus(sessionId)
 
       if (sessionId === null || sessionId === '') {
         return h('div', { style: { padding: 16, fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, t.unknownSession)
@@ -283,8 +301,55 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * The ambient one-liner under the composer: the card's headline without
+     * opening anything. Renders nothing until the session has a status, so a
+     * fresh session is not decorated.
+     * @param props - `sessionId` from the slot, `open` from the registration.
+     */
+    function StatusStrip(props) {
+      const t = dictionary()
+      const { view } = useStatus(sessionOf(props))
+      if (view === null) return null
+      return h('div', {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          padding: '2px 10px 3px',
+          fontSize: 11.5,
+          lineHeight: '16px',
+          color: 'var(--dsw-alias-label-secondary)',
+          minWidth: 0,
+        },
+      },
+      h('span', {
+        'aria-hidden': true,
+        style: { color: view.running ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-state-idle-primary)', fontSize: 8 },
+      }, '●'),
+      h('span', { style: { flex: '0 0 auto' } }, t.heading),
+      h('span', {
+        style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 },
+      }, `· ${view.headline}`),
+      h('button', {
+        type: 'button',
+        onClick: () => props.open?.(),
+        style: {
+          marginLeft: 'auto',
+          flex: '0 0 auto',
+          border: 'none',
+          background: 'none',
+          padding: '0 2px',
+          font: 'inherit',
+          color: 'var(--dsw-alias-brand-primary)',
+          cursor: 'pointer',
+        },
+      }, t.open),
+      )
+    }
+
     return {
-      inject: ['slots', 'sidebarRightTabs'],
+      inject: ['slots', 'sidebarRightTabs', 'sidebarRight'],
       apply(ctx) {
         ctx.effect(() => ctx.sidebarRightTabs.register({
           id: ID,
@@ -336,6 +401,17 @@ window.__ModuleLoader__.load({
             dispose?.()
           }
         }, 'tell-the-diff: better-sidebar bridge')
+
+        // The ambient line under the composer: the card's one-sentence summary
+        // without opening anything. This is the "always there" surface — the
+        // right column may be collapsed, may be showing another tab, or may be
+        // replaced by another sidebar plugin, and none of that hides this.
+        ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+          name: 'conversation.composer.dock',
+          id: ID,
+          order: 60,
+          inject: () => ({ open: () => { ctx.sidebarRight?.openTab?.(KIND) } }),
+        }, StatusStrip)), 'tell-the-diff: composer strip')
       },
     }
   },

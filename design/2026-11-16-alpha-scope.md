@@ -52,3 +52,13 @@
 **发现的关键事实**：`dsh-better-sidebar` 0.32.1 不用原生 tab 注册表渲染右栏——`sidebar/TabContent.tsx` 只认 `ctx.get('betterSidebar').getTab(tab.type)` 返回的 descriptor 的 `component`，找不到就画 `OrphanedTab`；`+` 菜单也来自 `service.getTabs()`。所以只注册原生 `sidebarRightTabs` 在装了 better-sidebar 的机器上不可达。已补：存在该服务时额外 `registerTab({ component })`，与原生共用同一个组件。
 
 （注：`TabContent.tsx:52` 证明 `TabDescriptor.component` 存在；先前从 `service.ts` 截取的接口片段没覆盖到该字段。）
+
+## 入口不可达的第二次修正
+
+用户反馈：右栏上方只有 dsh-context 的标签与全屏/收起两个按钮，没有 `+`。
+
+查 `shell/SidebarRight.tsx` 得事实：右栏标签条的「加页」控件由 `DockLayout` 的 `canAddTab` 控制，而 `canAddTab = paneId => guideIn(layout, paneId) === undefined` —— **该 pane 里已经有起始页时，加号直接不画**。所以"看不到 +"不是缺陷，是当前 pane 已经有一张起始页。
+
+结论：把入口全部押在起始页/标签条上太脆。新增第三个、不依赖右栏状态的入口——`conversation.composer.dock`（输入框下方）的一行状态：`● 任务状态 · <headline> · 打开`。它只读同一条路由，点击走 `ctx.sidebarRight.openTab('tell-the-diff')`。
+
+三个面（composer 条 / 右栏标签 / 起始页卡片）共用同一个 `StatusCard` 与同一个 `useStatus` 轮询，不会漂移。
