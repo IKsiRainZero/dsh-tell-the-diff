@@ -314,7 +314,7 @@ window.__ModuleLoader__.load({
           let attempts = 0
           const attach = () => {
             if (dispose !== null) return true
-            const better = ctx.get?.('betterSidebar')
+            const better = ctx.get?.('betterSidebar') ?? ctx.betterSidebar
             if (better === undefined || typeof better.registerTab !== 'function') return false
             dispose = better.registerTab({
               id: ID,
