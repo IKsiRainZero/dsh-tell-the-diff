@@ -35,6 +35,7 @@ test('the browser half registers itself as the package name', () => {
 test('applying the browser half registers one tab type and one body', () => {
   const types = []
   const slots = []
+  const betterTabs = []
   const module = loaded.factory((specifier) => {
     assert.equal(specifier, 'react')
     return React
@@ -43,6 +44,11 @@ test('applying the browser half registers one tab type and one body', () => {
   module.apply({
     effect(factory) {
       factory()
+    },
+    get(name) {
+      return name === 'betterSidebar'
+        ? { registerTab: (descriptor) => { betterTabs.push(descriptor); return () => {} } }
+        : undefined
     },
     sidebarRightTabs: {
       register(definition) {
@@ -75,4 +81,39 @@ test('applying the browser half registers one tab type and one body', () => {
   assert.equal(slots[0].options.key, 'dsh-tell-the-diff')
   assert.equal(typeof slots[0].component, 'function')
   assert.deepEqual(slots[0].options.inject('s1'), { sessionId: 's1' })
+
+  // The better-sidebar bridge shares the very same component, so the two
+  // right-column carriers cannot drift apart.
+  assert.equal(betterTabs.length, 1)
+  assert.equal(betterTabs[0].id, 'dsh-tell-the-diff')
+  assert.equal(betterTabs[0].single, true)
+  assert.equal(betterTabs[0].component, slots[0].component)
+})
+
+test('the better-sidebar bridge stays out of the way when that plugin is absent', () => {
+  const module = loaded.factory(() => React)
+  const registrations = []
+  const disposers = []
+  module.apply({
+    effect(factory) {
+      const dispose = factory()
+      if (typeof dispose === 'function') disposers.push(dispose)
+    },
+    get() {
+      return undefined
+    },
+    sidebarRightTabs: { register: () => () => {} },
+    slots: {
+      inject(ownerKey, callback) {
+        callback()
+        return () => {}
+      },
+      register() {
+        registrations.push(1)
+        return () => {}
+      },
+    },
+  })
+  for (const dispose of disposers) dispose()
+  assert.equal(registrations.length, 1)
 })

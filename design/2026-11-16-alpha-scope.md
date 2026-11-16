@@ -34,9 +34,21 @@
 
 ## 未验证 / 待办
 
-- [ ] 真实 GUI 里的渲染（需要重启 DSH 后确认）
-- [ ] `tell_the_diff` 在本会话里被真实调用一次
-- [ ] 右栏 guide 里能否看到入口（better-sidebar 是否接管了起始页）
+- [x] 重启后 Host 路由 200，`tell_the_diff` 真调用一次，状态进了视图
+- [x] `sidebar.right.pane.tab` 里 `dsh-tell-the-diff` 占位 active
+- [ ] 真实 GUI 里的渲染（等用户硬刷新后确认）
+- [ ] 右栏 `+` 菜单里的入口（better-sidebar 用自家 registry 渲染，已补桥接）
 - [ ] 中英文文案走 `ctx.locale`（现在只有浏览器语言二选一的本地字典）
 - [ ] `alert` 档与用户可调阈值（v0.3）
 - [ ] 预算：目前模型调用恒为 0；异步摘要接入时必须带硬上限
+
+## 重启后第一次实测（2026-11-16 19:55）
+
+- `GET /dsh-tell-the-diff/list` → 200，返回当前会话的 headline。
+- `GET /dsh-tell-the-diff/state?session=…` → 200，`running: true`，工具/轮次正确。
+- `tell_the_diff` 调用成功，`plain` 与 4 步计划进入视图，`surface: silent`。
+- 客户端 `sidebar.right.pane.tab` 占用表出现 `dsh-tell-the-diff`，active。
+
+**发现的关键事实**：`dsh-better-sidebar` 0.32.1 不用原生 tab 注册表渲染右栏——`sidebar/TabContent.tsx` 只认 `ctx.get('betterSidebar').getTab(tab.type)` 返回的 descriptor 的 `component`，找不到就画 `OrphanedTab`；`+` 菜单也来自 `service.getTabs()`。所以只注册原生 `sidebarRightTabs` 在装了 better-sidebar 的机器上不可达。已补：存在该服务时额外 `registerTab({ component })`，与原生共用同一个组件。
+
+（注：`TabContent.tsx:52` 证明 `TabDescriptor.component` 存在；先前从 `service.ts` 截取的接口片段没覆盖到该字段。）

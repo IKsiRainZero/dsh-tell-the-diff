@@ -162,8 +162,8 @@ window.__ModuleLoader__.load({
     function StatusCard(props) {
       const t = dictionary()
       const sessionId = props.sessionId
-        ?? props.session?.sessionId
         ?? props.scope?.sessionId
+        ?? props.session?.sessionId
         ?? props.tab?.sessionId
         ?? null
       const [view, setView] = useState(null)
@@ -303,6 +303,39 @@ window.__ModuleLoader__.load({
           key: ID,
           inject: (sessionId) => ({ sessionId }),
         }, StatusCard)), 'tell-the-diff: tab body')
+
+        // `dsh-better-sidebar`, when installed, draws the right column from its
+        // OWN tab registry instead of the native one, and renders whatever that
+        // registry points at. Without this bridge the card would be an
+        // "orphaned tab" there. The service may arrive after this module, so
+        // watch for it briefly rather than assuming load order.
+        ctx.effect(() => {
+          let dispose = null
+          let attempts = 0
+          const attach = () => {
+            if (dispose !== null) return true
+            const better = ctx.get?.('betterSidebar')
+            if (better === undefined || typeof better.registerTab !== 'function') return false
+            dispose = better.registerTab({
+              id: ID,
+              title: () => dictionary().tabTitle,
+              description: () => dictionary().tabDescription,
+              single: true,
+              order: 30,
+              component: StatusCard,
+            })
+            return true
+          }
+          if (attach()) return () => { dispose?.() }
+          const handle = setInterval(() => {
+            attempts += 1
+            if (attach() || attempts > 40) clearInterval(handle)
+          }, 250)
+          return () => {
+            clearInterval(handle)
+            dispose?.()
+          }
+        }, 'tell-the-diff: better-sidebar bridge')
       },
     }
   },
