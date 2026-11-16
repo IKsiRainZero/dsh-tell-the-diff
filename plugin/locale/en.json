@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Task status card",
+    "description": "A read-only right-sidebar card that says what this session is doing and where it stands, in plain words. No model calls by default.",
+    "detail": "docs/DETAIL.md"
+  }
+}

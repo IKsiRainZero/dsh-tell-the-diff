@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "任务状态卡",
+    "description": "右栏只读卡：用人话说明这个会话在做什么、做到哪、卡在哪。默认不调用模型。",
+    "detail": "docs/DETAIL.md"
+  }
+}

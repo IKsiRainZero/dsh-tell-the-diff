@@ -1,0 +1,13 @@
+{
+  "name": "tell-the-diff-workspace",
+  "private": true,
+  "type": "module",
+  "description": "Workspace for dsh-tell-the-diff: the plugin bundle lives in ./plugin, tests in ./test.",
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

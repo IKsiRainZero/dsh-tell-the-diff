@@ -1,0 +1,8 @@
+# Keep the workspace clean: the installable bundle is the only thing published.
+node_modules/
+plugin/node_modules/
+*.log
+.DS_Store
+Thumbs.db
+tmp/
+coverage/

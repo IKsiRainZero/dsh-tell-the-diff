@@ -1,0 +1,60 @@
+{
+  "name": "dsh-tell-the-diff",
+  "version": "0.1.0",
+  "description": "右栏任务状态卡：用人话说明这个会话在做什么、做到哪、卡在哪，不额外调用模型。",
+  "type": "module",
+  "private": true,
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "core/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "sidebar",
+    "task-status"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.2-rc.2 <0.3.0-0",
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    },
+    "catalog": {
+      "category": "ui",
+      "summary": {
+        "en": "A read-only task-status card in the right sidebar: what this session is doing and where it stands, in plain words, with no extra model calls.",
+        "zh": "右栏只读任务状态卡：用人话说明这个会话在做什么、做到哪、卡在哪，不额外调用模型。"
+      },
+      "capabilities": [
+        "webServer",
+        "tools"
+      ]
+    }
+  }
+}
