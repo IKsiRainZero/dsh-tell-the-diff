@@ -96,6 +96,27 @@ export function createMonitorStore(options = {}) {
       }
     },
 
+    /**
+     * Build a session's card from events that predate this plugin instance —
+     * a restart, or a session that was already running when the bundle loaded.
+     * The card must not read "还没开始" while the log is full of work.
+     * @param sessionId - the session to seed.
+     * @param cwd - its working directory, for short file names.
+     * @param events - its recent events, oldest first.
+     * @returns the resulting view, or undefined for an empty seed.
+     */
+    seed(sessionId, cwd, events) {
+      const id = String(sessionId ?? '')
+      if (id === '' || !Array.isArray(events) || events.length === 0) return viewOf(id)
+      // Seeding never rewinds a session the live feed already knows.
+      if (states.has(id)) return viewOf(id)
+      const state = ensure(id, cwd)
+      let folded = state
+      for (const event of events) folded = reduce(folded, event)
+      states.set(id, folded)
+      return viewOf(id)
+    },
+
     /** Forget one session outright (it was archived or disposed). */
     forget(sessionId) {
       states.delete(String(sessionId ?? ''))

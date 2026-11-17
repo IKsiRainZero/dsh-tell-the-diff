@@ -13,7 +13,7 @@
 import { createMonitorStore } from './core/store.js'
 
 export const name = 'dsh-tell-the-diff'
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer', 'tools', 'sessions']
 
 /** Route prefix; the client half hardcodes the same string. */
 const ROUTE = '/dsh-tell-the-diff'
@@ -85,6 +85,24 @@ function json(res, status, value) {
   res.end(JSON.stringify(value))
 }
 
+/** How much of an existing session's log the first read rebuilds from. */
+const SEED_EVENTS = 400
+
+/**
+ * Build a card for a session this instance has never seen — after a restart, or
+ * for a session that was already running when the bundle loaded. Without it the
+ * card would claim "还没开始" over a full log.
+ * @returns the view, or undefined when the session is not live.
+ */
+function seedFromLog(ctx, store, sessionId) {
+  const session = ctx.sessions?.get?.(sessionId)
+  if (session === undefined) return undefined
+  const end = Number(session.seq ?? 0)
+  const start = Math.max(0, end - SEED_EVENTS)
+  const events = typeof session.snapshotEvents === 'function' ? session.snapshotEvents(start, end) : []
+  return store.seed(sessionId, session.header?.cwd, events)
+}
+
 /**
  * Host plugin body.
  * @param ctx - the Cordis context owning this plugin.
@@ -114,7 +132,7 @@ export function apply(ctx) {
       const url = new URL(req.url ?? '/', 'http://localhost')
       const sessionId = url.searchParams.get('session')
       if (sessionId === null || sessionId === '') return json(res, 400, { ok: false, error: 'session is required' })
-      const view = store.view(sessionId)
+      const view = store.view(sessionId) ?? seedFromLog(ctx, store, sessionId)
       if (view === undefined) return json(res, 200, { ok: true, known: false })
       return json(res, 200, { ok: true, known: true, view })
     },

@@ -68,3 +68,23 @@ test('forgetting a session drops it', () => {
   store.forget('s1')
   assert.equal(store.view('s1'), undefined)
 })
+
+test('a session that existed before the plugin loaded can be seeded from its log', () => {
+  const store = createMonitorStore({ now: () => 5_000 })
+  store.seed('s1', 'C:/w', [
+    { type: 'turn/start', seq: 1, time: 1_000, data: { turn: 1 } },
+    call('c1', 'read', { file_path: 'C:/w/a.js' }, 2_000),
+    { type: 'tool/result', seq: 3, time: 2_500, data: { turn: 1, step: 1, message: { role: 'tool', toolCallId: 'c1', isError: false, content: [] } } },
+  ])
+  const view = store.view('s1')
+  assert.equal(view.episodes.length, 1)
+  assert.equal(view.episodes[0].label, '摸清现状')
+})
+
+test('seeding an already-known session never rewinds it', () => {
+  const store = createMonitorStore({ now: () => 5_000 })
+  store.observe(session('s1'), call('c1', 'edit', { file_path: 'C:/w/a.js' }, 2_000))
+  store.seed('s1', 'C:/w', [{ type: 'turn/start', seq: 1, time: 1_000, data: { turn: 1 } }])
+  assert.equal(store.view('s1').episodes.length, 1)
+  assert.equal(store.view('s1').episodes[0].label, '动手改')
+})

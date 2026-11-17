@@ -50,8 +50,31 @@ function request(handler, url, method = 'GET') {
 
 test('the host plugin declares its identity and required services', () => {
   assert.equal(name, 'dsh-tell-the-diff')
-  assert.deepEqual([...inject].sort(), ['tools', 'webServer'])
+  assert.deepEqual([...inject].sort(), ['sessions', 'tools', 'webServer'])
   assert.equal(typeof apply, 'function')
+})
+
+test('a session that predates the plugin is rebuilt from its own log', () => {
+  const { ctx, handlers } = harness()
+  ctx.sessions = {
+    get(id) {
+      if (id !== 'old') return undefined
+      return {
+        seq: 3,
+        header: { cwd: 'C:/w' },
+        snapshotEvents: () => [
+          { type: 'turn/start', seq: 1, time: 1_000, data: { turn: 1 } },
+          { type: 'tool/call', seq: 2, time: 2_000, data: { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{"file_path":"C:/w/a.js"}' } },
+          { type: 'tool/result', seq: 3, time: 2_500, data: { turn: 1, step: 1, message: { role: 'tool', toolCallId: 'c1', isError: false, content: [] } } },
+        ],
+      }
+    },
+  }
+  apply(ctx)
+  const response = request(handlers.get('route:/dsh-tell-the-diff/state'), '/dsh-tell-the-diff/state?session=old')
+  assert.equal(response.json.known, true)
+  assert.equal(response.json.view.episodes.length, 1)
+  assert.equal(response.json.view.episodes[0].label, '摸清现状')
 })
 
 test('the state route answers unknown sessions without inventing a card', () => {
