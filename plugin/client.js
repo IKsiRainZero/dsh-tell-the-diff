@@ -39,6 +39,8 @@ window.__ModuleLoader__.load({
         activity: '最近做了什么',
         files: '动过的文件',
         issues: '还没解决的问题',
+        planModel: '模型自己写的',
+        planInferred: '按动作推断',
         stats: (tools, errors) => `${tools} 次动作 · ${errors} 次出错`,
         budget: '模型调用 0 次（α 版只读会话记录，不额外消耗 token）',
         failed: '读取状态失败',
@@ -64,6 +66,8 @@ window.__ModuleLoader__.load({
         activity: 'What just happened',
         files: 'Files touched',
         issues: 'Unresolved',
+        planModel: 'from the model',
+        planInferred: 'inferred from actions',
         stats: (tools, errors) => `${tools} actions · ${errors} errors`,
         budget: '0 model calls — alpha reads the session log only',
         failed: 'Could not read status',
@@ -91,12 +95,6 @@ window.__ModuleLoader__.load({
       const minutes = Math.round(seconds / 60)
       if (minutes < 60) return `${minutes} 分前`
       return `${Math.round(minutes / 60)} 小时前`
-    }
-
-    const STATUS_COLOR = {
-      running: 'var(--dsw-alias-state-idle-primary)',
-      ok: 'var(--dsw-alias-state-success-primary)',
-      error: 'var(--dsw-alias-state-error-primary)',
     }
 
     const chip = {
@@ -142,20 +140,6 @@ window.__ModuleLoader__.load({
             opacity: step.status === 'done' ? 0.65 : 1,
           },
         }, step.title),
-      )
-    }
-
-    /** One activity row: what the model did, how it ended, how long it took. */
-    function ActivityRow({ entry, t }) {
-      const color = STATUS_COLOR[entry.status] ?? STATUS_COLOR.running
-      return h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0' } },
-        h('span', { 'aria-hidden': true, style: { color, fontSize: 9, flex: '0 0 8px' } }, '●'),
-        h('span', { style: { fontSize: 12.5, color: 'var(--dsw-alias-label-primary)', minWidth: 0 } },
-          entry.label,
-          entry.detail === '' ? null : h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, ` · ${entry.detail}`),
-        ),
-        h('span', { style: { marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' } },
-          entry.status === 'running' ? t.statusRunning : humanAgo(entry.ago, t)),
       )
     }
 
@@ -210,6 +194,40 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One purpose, with the commands that made it up underneath. The purpose is
+     * what a reader judges; the commands are the evidence they can check.
+     * @param props - the episode from the view, plus the dictionary.
+     */
+    function EpisodeBlock({ episode, t }) {
+      const more = episode.count - episode.items.length
+      return h('div', { style: { padding: '7px 0 6px', borderBottom: '1px solid var(--dsw-alias-border-l1)' } },
+        h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
+          h('span', { style: { fontSize: 12.5, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', whiteSpace: 'nowrap' } }, episode.label),
+          h('span', {
+            style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+          }, episode.detail),
+          h('span', { style: { marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' } },
+            humanAgo(episode.ago, t)),
+        ),
+        episode.items.length === 0 ? null : h('div', { style: { marginTop: 3 } },
+          episode.items.map((item, index) => h('div', {
+            key: index,
+            style: {
+              fontSize: 11,
+              lineHeight: '16px',
+              color: 'var(--dsw-alias-label-secondary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            },
+          }, [item.label, item.detail].filter(Boolean).join(' · '))),
+          more > 0 ? h('div', { style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)', opacity: 0.7 } },
+            `… 另外 ${more} 条`) : null,
+        ),
+      )
+    }
+
+    /**
      * The card. Fetches one session's status on a timer while it is mounted.
      * @param props - `sessionId` injected by the slot; `scope` under better-sidebar.
      */
@@ -255,7 +273,11 @@ window.__ModuleLoader__.load({
               }, view.plain),
 
             view.plan.length === 0 ? null : h('div', null,
-              h('div', { style: sectionTitle }, t.plan),
+              h('div', { style: { ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6 } },
+                t.plan,
+                h('span', { style: { ...chip, fontSize: 10, padding: '0 6px', fontWeight: 400 } },
+                  view.planSource === 'model' ? t.planModel : t.planInferred),
+              ),
               h('div', null, view.plan.map((step, index) => h(StepRow, { key: `${index}-${step.title}`, step, t }))),
             ),
 
@@ -278,9 +300,13 @@ window.__ModuleLoader__.load({
             ),
 
             h('div', { style: sectionTitle }, t.activity),
-            view.activity.length === 0
+            (view.episodes ?? []).length === 0
               ? h('div', { style: { fontSize: 12.5, color: 'var(--dsw-alias-label-secondary)' } }, t.noActivity)
-              : h('div', null, view.activity.slice(0, 8).map(entry => h(ActivityRow, { key: entry.id, entry, t }))),
+              : h('div', null, [...view.episodes].reverse().map((episode, index) => h(EpisodeBlock, {
+                key: `${episode.kind}-${index}-${episode.ago}`,
+                episode,
+                t,
+              }))),
 
             h('div', { style: sectionTitle }, t.files),
             view.files.length === 0
@@ -313,6 +339,12 @@ window.__ModuleLoader__.load({
       const t = dictionary()
       const { view } = useStatus(sessionOf(props))
       if (view === null) return null
+      // While work is in flight, say what the work is *for*; the tool name is
+      // already on screen in the transcript below.
+      const current = (view.episodes ?? []).at(-1)
+      const text = view.running && current !== undefined
+        ? `${current.label}${current.detail === '' ? '' : ` · ${current.detail}`}`
+        : view.headline
       return h('div', {
         style: {
           display: 'flex',
@@ -332,7 +364,7 @@ window.__ModuleLoader__.load({
       h('span', { style: { flex: '0 0 auto' } }, t.heading),
       h('span', {
         style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 },
-      }, `· ${view.headline}`),
+      }, `· ${text}`),
       h('button', {
         type: 'button',
         onClick: () => props.open?.(),

@@ -1,6 +1,6 @@
 {
   "name": "dsh-tell-the-diff",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "右栏任务状态卡：用人话说明这个会话在做什么、做到哪、卡在哪，不额外调用模型。",
   "type": "module",
   "private": true,

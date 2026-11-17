@@ -176,3 +176,51 @@ test('shouldSurface never escalates past card in alpha', () => {
   ])
   assert.notEqual(shouldSurface(state, 999_999), 'alert')
 })
+
+test('the model\'s own todo list becomes the plan, without being asked for it', () => {
+  const state = folded([
+    call('t1', 'todo_write', {
+      todos: [
+        { content: '读一遍现有实现', status: 'completed' },
+        { content: '补齐分组逻辑', status: 'in_progress' },
+        { content: '跑测试', status: 'pending' },
+      ],
+    }, 1_000),
+    result('t1', { time: 1_100 }),
+  ])
+  const view = snapshot(state, 2_000)
+  assert.equal(view.planSource, 'model')
+  assert.deepEqual(view.plan.map(step => step.title), ['读一遍现有实现', '补齐分组逻辑', '跑测试'])
+  assert.deepEqual(view.plan.map(step => step.status), ['done', 'doing', 'todo'])
+})
+
+test('without a model plan, the plan is read off the actions and marked as inferred', () => {
+  const state = folded([
+    call('c1', 'read', { file_path: 'C:/w/a.js' }, 1_000),
+    result('c1', { time: 1_100 }),
+    call('c2', 'edit', { file_path: 'C:/w/a.js' }, 2_000),
+    result('c2', { time: 2_100 }),
+  ])
+  const view = snapshot(state, 3_000)
+  assert.equal(view.planSource, 'inferred')
+  assert.deepEqual(view.plan.map(step => step.title), ['摸清现状', '动手改'])
+  // While the turn is still open the last purpose is the one in flight; once
+  // the turn closes it is history.
+  assert.equal(view.plan.at(-1).status, 'doing')
+  const closed = reduce(state, { type: 'turn/end', seq: 9, time: 4_000, data: { turn: 1, reason: { kind: 'completed' } } })
+  assert.equal(snapshot(closed, 5_000).plan.at(-1).status, 'done')
+})
+
+test('the card exposes purposes with their own commands underneath', () => {
+  const state = folded([
+    call('c1', 'read', { file_path: 'C:/w/a.js' }, 1_000),
+    result('c1', { time: 1_100 }),
+    call('c2', 'read', { file_path: 'C:/w/b.js' }, 1_200),
+    result('c2', { time: 1_300 }),
+  ])
+  const view = snapshot(state, 2_000)
+  assert.equal(view.episodes.length, 1)
+  assert.equal(view.episodes[0].label, '摸清现状')
+  assert.match(view.episodes[0].detail, /2 个文件/)
+  assert.deepEqual(view.episodes[0].items.map(item => item.detail), ['a.js', 'b.js'])
+})

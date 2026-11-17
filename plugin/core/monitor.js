@@ -10,6 +10,8 @@
  * unit tests that need no Harness at all.
  */
 
+import { classifyIntent, groupEpisodes, deriveStages, describeEpisode } from './episodes.js'
+
 /** How many finished activities the card keeps. */
 export const MAX_RECENT = 20
 /** How many unresolved/resolved issues the card keeps. */
@@ -23,7 +25,7 @@ export const FAILURE_WINDOW_MS = 120_000
 /** Failures inside the window that make it a pattern. */
 export const FAILURE_COUNT = 2
 /** Bumped when the fold semantics change, so stored state is discarded. */
-export const STATE_VERSION = 1
+export const STATE_VERSION = 2
 
 /**
  * Tool name → what a non-technical reader would call that action.
@@ -150,6 +152,8 @@ export function createState(sessionId = null, options = {}) {
     files: [],
     issues: [],
     checkpoints: [],
+    plan: [],
+    planSource: null,
     stats: { toolCalls: 0, errors: 0, turns: 0 },
   }
 }
@@ -234,6 +238,7 @@ export function reduce(state, event) {
       return state.running ? { ...state, updatedAt: event.time } : { ...state, updatedAt: event.time }
 
     case 'tool/call': {
+      const args = argsOf(data.arguments)
       const { label, detail } = describeTool(data.name, data.arguments, state.cwd)
       const entry = {
         id: String(data.callId),
@@ -241,6 +246,7 @@ export function reduce(state, event) {
         tool: data.name,
         label,
         detail,
+        intent: classifyIntent(data.name, args),
         status: 'running',
         ms: null,
       }
@@ -252,7 +258,12 @@ export function reduce(state, event) {
         updatedAt: event.time,
         stats: { ...state.stats, toolCalls: state.stats.toolCalls + 1 },
       }
-      const args = argsOf(data.arguments)
+      // The model's own plan is the best plan there is; take it whenever the
+      // model records one, and never ask it to record one just for this card.
+      if (data.name === 'todo_write' && Array.isArray(args.todos)) {
+        const plan = planFromTodos(args.todos)
+        if (plan !== null) next = { ...next, plan, planSource: 'model', updatedAt: event.time }
+      }
       const path = typeof args.file_path === 'string' ? args.file_path : args.path
       const kind = WRITE_TOOLS.has(data.name) ? 'write' : EDIT_TOOLS.has(data.name) ? 'edit' : READ_TOOLS.has(data.name) ? 'read' : null
       if (kind !== null && typeof path === 'string' && path !== '') next = { ...next, files: trackFile(next.files, path, kind, event.time) }
@@ -286,6 +297,24 @@ export function reduce(state, event) {
 }
 
 /**
+ * The model's own todo list, mapped onto the card's step vocabulary. This is
+ * the highest-authority plan source: it is what the model already told the
+ * session it intends to do.
+ * @param todos - `todo_write`'s `todos` argument.
+ * @returns steps, or null when the list is empty.
+ */
+export function planFromTodos(todos) {
+  const steps = todos
+    .filter(todo => todo !== null && typeof todo === 'object' && typeof todo.content === 'string')
+    .slice(0, 12)
+    .map(todo => ({
+      title: todo.content,
+      status: todo.status === 'completed' ? 'done' : todo.status === 'in_progress' ? 'doing' : 'todo',
+    }))
+  return steps.length === 0 ? null : steps
+}
+
+/**
  * Record the model's own plain-language checkpoint. This is the only channel by
  * which the card can say *why*, not just *what*.
  * @param state - the current state.
@@ -309,6 +338,7 @@ export function noteCheckpoint(state, checkpoint, now) {
   return {
     ...state,
     checkpoints: capped(state.checkpoints, entry, MAX_CHECKPOINTS),
+    ...(entry.steps.length > 0 ? { plan: entry.steps, planSource: 'model' } : {}),
     updatedAt: now,
   }
 }
@@ -340,6 +370,12 @@ export function snapshot(state, now) {
     : state.updatedAt > 0
       ? `空闲 · 上一步 ${humanDuration(idleFor)}前结束`
       : '还没开始'
+  const episodes = groupEpisodes(state.recent)
+  const stages = deriveStages(episodes, { running: state.running || running !== null })
+  const hasModelPlan = state.plan.length > 0
+  const plan = hasModelPlan
+    ? state.plan
+    : stages.map(stage => ({ title: stage.label, status: stage.status, detail: stage.detail }))
   return {
     sessionId: state.sessionId,
     running: running !== null,
@@ -348,9 +384,29 @@ export function snapshot(state, now) {
     headline,
     idleFor,
     plain: checkpoint?.plain ?? '',
-    plan: checkpoint?.steps ?? [],
+    plan,
+    // Where the plan came from decides how much to trust it: the model's own
+    // words, or our reading of its actions.
+    planSource: hasModelPlan ? 'model' : stages.length > 0 ? 'inferred' : null,
     questions: checkpoint?.questions ?? [],
     risks: checkpoint?.risks ?? [],
+    episodes: episodes.slice(-3).map(episode => {
+      const described = describeEpisode(episode)
+      return {
+        kind: episode.kind,
+        label: described.label,
+        detail: described.detail,
+        failed: episode.failed,
+        count: episode.items.length,
+        ago: now - episode.endedAt,
+        items: episode.items.slice(-4).map(item => ({
+          tool: item.tool,
+          label: item.label,
+          detail: item.detail,
+          status: item.status,
+        })),
+      }
+    }),
     activity: [...state.recent].reverse().map(entry => ({
       id: entry.id,
       tool: entry.tool,
