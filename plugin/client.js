@@ -27,9 +27,15 @@ window.__ModuleLoader__.load({
 
     const TEXT = {
       zh: {
-        tabTitle: '任务状态',
-        tabDescription: '用普通人能看懂的话说明这个会话在做什么、做到哪、卡在哪。',
-        heading: '任务状态',
+        tabTitle: '这一路',
+        tabDescription: '会话走到哪了：落点、岔路，以及此刻的状态。',
+        heading: '这一路',
+        roadmap: '落点',
+        noRoadmap: '还没有落点。等第一个可验证的结果出现（测试通过、文件落地），这里就会长出第一段路。',
+        stuck: '卡住了',
+        detour: '换过路',
+        filesShort: '文件',
+        actionsShort: '动作',
         open: '打开',
         empty: '这个会话还没有开始。任务一开始，这里就会显示它在做什么。',
         unknownSession: '还没有可显示的状态。发一句话给模型，这里就会亮起来。',
@@ -54,9 +60,15 @@ window.__ModuleLoader__.load({
         stepBlocked: '卡住了',
       },
       en: {
-        tabTitle: 'Task status',
-        tabDescription: 'What this session is doing, and where it stands, in plain words.',
-        heading: 'Task status',
+        tabTitle: 'The path',
+        tabDescription: 'Where this session has been: landings, detours, and its state right now.',
+        heading: 'The path',
+        roadmap: 'Landings',
+        noRoadmap: 'No landings yet. The path grows once something verifiable happens — a test passes, files land.',
+        stuck: 'Stuck',
+        detour: 'Changed course',
+        filesShort: 'files',
+        actionsShort: 'actions',
         open: 'Open',
         empty: 'Nothing has happened in this session yet. The card fills in once a task starts.',
         unknownSession: 'No status to show yet. Send one message and this card lights up.',
@@ -194,35 +206,41 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One purpose, with the commands that made it up underneath. The purpose is
-     * what a reader judges; the commands are the evidence they can check.
-     * @param props - the episode from the view, plus the dictionary.
+     * One node of the path: a landing (filled dot) or a place it got stuck
+     * (branch glyph). Newest first, joined by a hairline so the shape of the
+     * session reads as one line.
+     * @param props - the node, whether it is the last one, and the dictionary.
      */
-    function EpisodeBlock({ episode, t }) {
-      const more = episode.count - episode.items.length
-      return h('div', { style: { padding: '7px 0 6px', borderBottom: '1px solid var(--dsw-alias-border-l1)' } },
-        h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
-          h('span', { style: { fontSize: 12.5, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', whiteSpace: 'nowrap' } }, episode.label),
-          h('span', {
-            style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-          }, episode.detail),
-          h('span', { style: { marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' } },
-            humanAgo(episode.ago, t)),
+    function RoadRow({ item, last, t }) {
+      const fork = item.type === 'fork'
+      const color = fork
+        ? 'var(--dsw-alias-state-warn-primary)'
+        : item.failed
+          ? 'var(--dsw-alias-state-error-primary)'
+          : 'var(--dsw-alias-brand-primary)'
+      const label = fork ? (item.status === 'ongoing' ? t.stuck : t.detour) : item.label
+      return h('div', { style: { display: 'flex', gap: 8, paddingBottom: last ? 2 : 12 } },
+        h('div', { style: { flex: '0 0 12px', display: 'flex', flexDirection: 'column', alignItems: 'center' } },
+          h('span', { 'aria-hidden': true, style: { color, fontSize: fork ? 11 : 9, lineHeight: '17px' } }, fork ? '⑂' : '●'),
+          last ? null : h('span', { style: { flex: 1, width: 1, background: 'var(--dsw-alias-border-l1)', marginTop: 1 } }),
         ),
-        episode.items.length === 0 ? null : h('div', { style: { marginTop: 3 } },
-          episode.items.map((item, index) => h('div', {
-            key: index,
-            style: {
-              fontSize: 11,
-              lineHeight: '16px',
-              color: 'var(--dsw-alias-label-secondary)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            },
-          }, [item.label, item.detail].filter(Boolean).join(' · '))),
-          more > 0 ? h('div', { style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)', opacity: 0.7 } },
-            `… 另外 ${more} 条`) : null,
+        h('div', { style: { minWidth: 0, flex: 1 } },
+          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 6 } },
+            h('span', {
+              style: {
+                fontSize: 12.5,
+                fontWeight: fork ? 500 : 600,
+                color: fork ? 'var(--dsw-alias-label-secondary)' : 'var(--dsw-alias-label-primary)',
+                whiteSpace: 'nowrap',
+              },
+            }, label),
+            h('span', {
+              title: item.detail,
+              style: { fontSize: 11.5, color: 'var(--dsw-alias-label-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+            }, item.detail),
+            h('span', { style: { marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' } },
+              humanAgo(item.ago, t)),
+          ),
         ),
       )
     }
@@ -235,6 +253,13 @@ window.__ModuleLoader__.load({
       const t = dictionary()
       const sessionId = sessionOf(props)
       const { view, error } = useStatus(sessionId)
+      // One path: landings and detours, newest first.
+      const road = view === null
+        ? []
+        : [
+          ...(view.milestones ?? []).map(item => ({ ...item, type: 'milestone' })),
+          ...(view.forks ?? []).map(item => ({ ...item, type: 'fork' })),
+        ].sort((left, right) => right.at - left.at)
 
       if (sessionId === null || sessionId === '') {
         return h('div', { style: { padding: 16, fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } }, t.unknownSession)
@@ -299,30 +324,35 @@ window.__ModuleLoader__.load({
                 view.openIssues.map((issue, index) => h('div', { key: index }, `${issue.label}${issue.detail === '' ? '' : ` · ${issue.detail}`}`))),
             ),
 
-            h('div', { style: sectionTitle }, t.activity),
-            (view.episodes ?? []).length === 0
-              ? h('div', { style: { fontSize: 12.5, color: 'var(--dsw-alias-label-secondary)' } }, t.noActivity)
-              : h('div', null, [...view.episodes].reverse().map((episode, index) => h(EpisodeBlock, {
-                key: `${episode.kind}-${index}-${episode.ago}`,
-                episode,
+            h('div', { style: sectionTitle }, t.roadmap),
+            road.length === 0
+              ? h('div', { style: { fontSize: 12.5, color: 'var(--dsw-alias-label-secondary)' } }, t.noRoadmap)
+              : h('div', null, road.map((item, index) => h(RoadRow, {
+                key: `${item.type}-${item.at}`,
+                item,
+                last: index === road.length - 1,
                 t,
               }))),
 
-            h('div', { style: sectionTitle }, t.files),
+            // Everything that duplicates the transcript or dsh-context lives
+            // here: one dim line in the corner, not a section of its own.
+            h('div', {
+              style: { marginTop: 14, fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)', opacity: 0.85 },
+            },
+            h('div', null, [
+              `${t.filesShort} ${view.files.length}`,
+              `${t.actionsShort} ${view.stats.toolCalls}`,
+              view.stats.errors > 0 ? `出错 ${view.stats.errors}` : '',
+            ].filter(Boolean).join(' · ')),
             view.files.length === 0
-              ? h('div', { style: { fontSize: 12.5, color: 'var(--dsw-alias-label-secondary)' } }, t.noFiles)
-              : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, view.files.slice(0, 8).map(file => h('div', {
-                key: file.path,
-                title: file.path,
-                style: { display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 12, color: 'var(--dsw-alias-label-primary)' },
-              },
-              h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 } }, file.name),
-              h('span', { style: { marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap' } },
-                [file.reads > 0 ? `读 ${file.reads}` : '', file.edits > 0 ? `改 ${file.edits}` : '', file.writes > 0 ? `写 ${file.writes}` : ''].filter(Boolean).join(' · ')),
-              ))),
+              ? null
+              : h('div', {
+                title: view.files.map(file => file.path).join('\n'),
+                style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+              }, view.files.slice(0, 4).map(file => file.name).join('、') + (view.files.length > 4 ? ` 等 ${view.files.length} 个` : '')),
+            ),
 
-            h('div', { style: { marginTop: 18, paddingTop: 10, borderTop: '1px solid var(--dsw-alias-border-l1)', fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' } },
-              h('div', null, t.stats(view.stats.toolCalls, view.stats.errors)),
+            h('div', { style: { marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' } },
               h('div', null, t.budget),
             ),
           ),
@@ -339,11 +369,11 @@ window.__ModuleLoader__.load({
       const t = dictionary()
       const { view } = useStatus(sessionOf(props))
       if (view === null) return null
-      // While work is in flight, say what the work is *for*; the tool name is
-      // already on screen in the transcript below.
-      const current = (view.episodes ?? []).at(-1)
-      const text = view.running && current !== undefined
-        ? `${current.label}${current.detail === '' ? '' : ` · ${current.detail}`}`
+      // Running: say which landing we are working away from. Idle: the anchor
+      // the user asked to keep — how long ago the last step ended.
+      const focus = view.focus ?? null
+      const text = view.running && focus !== null
+        ? `${focus.label}${focus.detail === '' ? '' : ` · ${focus.detail}`}`
         : view.headline
       return h('div', {
         style: {

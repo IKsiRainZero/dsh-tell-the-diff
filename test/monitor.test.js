@@ -224,3 +224,22 @@ test('the card exposes purposes with their own commands underneath', () => {
   assert.match(view.episodes[0].detail, /2 个文件/)
   assert.deepEqual(view.episodes[0].items.map(item => item.detail), ['a.js', 'b.js'])
 })
+
+test('the card carries the path: landings, the current focus, and where it got stuck', () => {
+  const state = folded([
+    call('c1', 'bash', { command: 'pnpm test' }, 1_000),
+    result('c1', { isError: true, time: 1_500 }),
+    call('c2', 'bash', { command: 'pnpm test' }, 2_000),
+    result('c2', { isError: true, time: 2_500 }),
+    call('c3', 'edit', { file_path: 'C:/w/vitest.config.ts' }, 3_000),
+    result('c3', { time: 3_500 }),
+  ])
+  const view = snapshot(state, 4_000)
+  // A red check is a landing too: "tests are failing" is a state you could
+  // stop at, and pretending otherwise would hide where the work stands.
+  assert.deepEqual(view.milestones.map(milestone => milestone.kind), ['check', 'change'])
+  assert.equal(view.focus.label, '改动了代码')
+  assert.equal(view.forks.length, 1)
+  assert.equal(view.forks[0].status, 'abandoned')
+  assert.equal(view.forks[0].ago, 1_500)
+})

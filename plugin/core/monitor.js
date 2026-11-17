@@ -11,9 +11,10 @@
  */
 
 import { classifyIntent, groupEpisodes, deriveStages, describeEpisode } from './episodes.js'
+import { buildRoadmap } from './roadmap.js'
 
 /** How many finished activities the card keeps. */
-export const MAX_RECENT = 20
+export const MAX_RECENT = 120
 /** How many unresolved/resolved issues the card keeps. */
 export const MAX_ISSUES = 10
 /** How many checkpoints the model may push; only the newest one is shown. */
@@ -372,6 +373,7 @@ export function snapshot(state, now) {
       : '还没开始'
   const episodes = groupEpisodes(state.recent)
   const stages = deriveStages(episodes, { running: state.running || running !== null })
+  const { milestones, forks } = buildRoadmap(state.recent)
   const hasModelPlan = state.plan.length > 0
   const plan = hasModelPlan
     ? state.plan
@@ -388,6 +390,15 @@ export function snapshot(state, now) {
     // Where the plan came from decides how much to trust it: the model's own
     // words, or our reading of its actions.
     planSource: hasModelPlan ? 'model' : stages.length > 0 ? 'inferred' : null,
+    // The path: where the work actually landed, and where it got stuck.
+    milestones: milestones.map(milestone => ({ ...milestone, ago: now - milestone.at })),
+    forks: forks.map(fork => ({ ...fork, ago: now - fork.at })),
+    focus: milestones.length === 0
+      ? null
+      : (() => {
+        const last = milestones.at(-1)
+        return { label: last.label, detail: last.detail, ago: now - last.at, failed: last.failed }
+      })(),
     questions: checkpoint?.questions ?? [],
     risks: checkpoint?.risks ?? [],
     episodes: episodes.slice(-3).map(episode => {
